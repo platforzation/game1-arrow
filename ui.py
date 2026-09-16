@@ -52,6 +52,7 @@ def get_font(size, bold=False):
 
 def draw_arrow(surf, center, direction, size, color, dark, alpha=255):
     """在 center 处绘制一个 direction 方向的箭头，size 为整体像素尺寸。"""
+    size = int(size)
     tmp = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
     cx = cy = size
     # 以“向右”为基准图形：尾杆 + 箭头
