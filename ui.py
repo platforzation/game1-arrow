@@ -16,8 +16,8 @@ from levels import LEVELS
 
 # ---------------- 常量 ----------------
 W, H = 880, 700          # 窗口尺寸
-HUD_H = 96               # 顶部信息栏高度
-CELL = 76                # 棋盘格边长
+HUD_H = 110              # 顶部信息栏高度
+CELL = 76                # 棋盘格边长（大棋盘会按行列数自适应缩小）
 FPS = 60
 
 # 配色
@@ -48,6 +48,13 @@ def get_font(size, bold=False):
         if path:
             return pygame.font.Font(path, size)
     return pygame.font.Font(None, size)
+
+
+def fmt_time(sec):
+    """把秒数格式化为 MM:SS（向上取整，保证显示 1 秒时剩余 1 秒）。"""
+    sec = int(math.ceil(max(0.0, sec)))
+    return '%02d:%02d' % (sec // 60, sec % 60)
+
 
 
 def draw_arrow(surf, center, direction, size, color, dark, alpha=255):
@@ -133,7 +140,7 @@ class FlyOut:
         pos = (self.start[0] + (self.end[0] - self.start[0]) * k,
                self.start[1] + (self.end[1] - self.start[1]) * k)
         alpha = 255 if k < 0.6 else int(255 * (1 - k) / 0.4)
-        draw_arrow(surf, pos, self.ch, CELL * 0.55, ARROW_GOLD, (140, 96, 30), alpha)
+        draw_arrow(surf, pos, self.ch, self.app.cell * 0.55, ARROW_GOLD, (140, 96, 30), alpha)
 
 
 class Shake:
@@ -153,17 +160,18 @@ class Shake:
         k = self.t / self.dur
         off = math.sin(self.t * 42) * 6 * (1 - k)
         pos = self.app.cell_center(self.r, self.c)
-        draw_arrow(surf, (pos[0] + off, pos[1]), self.ch, CELL * 0.55,
+        draw_arrow(surf, (pos[0] + off, pos[1]), self.ch, self.app.cell * 0.55,
                    BLOCKED_RED, (130, 40, 36))
 
 
 class FloatText:
-    """上升并淡出的提示文字（如“前方有阻挡！”）。"""
+    """上升并淡出的提示文字（如“前方有阻挡！”“时间到！”）。"""
 
-    def __init__(self, text, pos, color=BLOCKED_RED):
+    def __init__(self, text, pos, color=BLOCKED_RED, cell=CELL):
         self.text = text
         self.pos = pos
         self.color = color
+        self.cell = cell
         self.t = 0.0
         self.dur = 0.9
 
@@ -176,7 +184,7 @@ class FloatText:
         alpha = 255 if k < 0.5 else int(255 * (1 - k) / 0.5)
         img = get_font(24, bold=True).render(self.text, True, self.color)
         img.set_alpha(alpha)
-        y = self.pos[1] - CELL - 8 - k * 26
+        y = self.pos[1] - self.cell - 8 - k * 26
         surf.blit(img, img.get_rect(center=(self.pos[0], y)))
 
 
@@ -198,6 +206,7 @@ class App:
         self.state = self.STATE_START
         self.level_index = 0
         self.session = None
+        self.cell = CELL              # 当前关卡格子边长（大棋盘自适应缩小）
         self.animations = []      # FlyOut / Shake
         self.floats = []          # FloatText
         self.hint_target = None   # 提示高亮的箭头坐标
@@ -211,18 +220,19 @@ class App:
     def board_origin(self):
         rows = self.session.board.rows if self.session else 4
         cols = self.session.board.cols if self.session else 4
-        bx = (W - cols * CELL) // 2
-        by = HUD_H + (H - HUD_H - rows * CELL) // 2
+        bx = (W - cols * self.cell) // 2
+        by = HUD_H + (H - HUD_H - rows * self.cell) // 2
         return bx, by
 
     def cell_center(self, r, c):
         bx, by = self.board_origin()
-        return (bx + c * CELL + CELL // 2, by + r * CELL + CELL // 2)
+        return (bx + c * self.cell + self.cell // 2,
+                by + r * self.cell + self.cell // 2)
 
     def cell_at(self, x, y):
         bx, by = self.board_origin()
-        r = (y - by) // CELL
-        c = (x - bx) // CELL
+        r = (y - by) // self.cell
+        c = (x - bx) // self.cell
         if 0 <= r < self.session.board.rows and 0 <= c < self.session.board.cols:
             return int(r), int(c)
         return None
@@ -233,7 +243,11 @@ class App:
         """进入第 i 关（i 从 0 开始）。"""
         self.level_index = i
         lv = LEVELS[i]
-        self.session = Session(lv['grid'], lv['max_mistakes'])
+        self.session = Session(lv['grid'], lv['max_mistakes'],
+                               lv.get('time_limit', 0))
+        # 大棋盘自适应缩小格子，保证整个棋盘居中显示
+        rows, cols = self.session.board.rows, self.session.board.cols
+        self.cell = max(40, min(CELL, (W - 60) // cols, (H - HUD_H - 60) // rows))
         self.animations = []
         self.floats = []
         self.hint_target = None
@@ -309,7 +323,8 @@ class App:
         else:
             self.session.click(r, c)          # 被阻挡：失误次数 -1
             self.animations.append(Shake(r, c, ch, self))
-            self.floats.append(FloatText('前方有阻挡！', self.cell_center(r, c)))
+            self.floats.append(FloatText('前方有阻挡！', self.cell_center(r, c),
+                                         cell=self.cell))
             if self.session.status == 'lost':
                 self._lose_timer = 0.6        # 稍作延迟，让晃动反馈可见
 
@@ -324,13 +339,13 @@ class App:
             b(Button((W // 2 - 130, 532, 260, 54), '退出游戏', self.action_quit, get_font(24)))
         elif self.state == self.STATE_SELECT:
             cols = 3
-            bw, bh, gap = 200, 92, 24
+            bw, bh, gap = 190, 82, 16
             x0 = (W - cols * bw - (cols - 1) * gap) // 2
-            y0 = 176
+            y0 = 150
             for i, lv in enumerate(LEVELS):
                 r, c = divmod(i, cols)
                 n = sum(1 for row in lv['grid'] for ch in row if ch in DIRECTIONS)
-                b(LevelButton((x0 + c * (bw + gap), y0 + r * (bh + 20), bw, bh),
+                b(LevelButton((x0 + c * (bw + gap), y0 + r * (bh + 14), bw, bh),
                               lv['name'], n, lambda i=i: self.action_level(i)))
             b(Button((W // 2 - 110, 566, 220, 48), '返回主菜单', self.action_start_menu, get_font(22)))
         elif self.state == self.STATE_GAME:
@@ -379,6 +394,11 @@ class App:
         self.animations = [a for a in self.animations if not a.update(dt)]
         self.floats = [f for f in self.floats if not f.update(dt)]
         if self.state == self.STATE_GAME and self.session:
+            if self.session.tick(dt) and self._lose_timer is None:
+                # 时间耗尽：延迟片刻显示失败界面，并给出“时间到！”提示
+                self._lose_timer = 0.4
+                self.floats.append(FloatText('时间到！', (W // 2, H // 2),
+                                             color=BLOCKED_RED, cell=self.cell))
             if self._lose_timer is not None:
                 self._lose_timer -= dt
                 if self._lose_timer <= 0:
@@ -415,8 +435,8 @@ class App:
         s.blit(sub, sub.get_rect(center=(W // 2, 196)))
         lines = [
             '· 点击箭头：若其前方直到棋盘边界没有其他箭头，箭头飞出并消除；',
-            '· 若被其他箭头阻挡，箭头保留，并消耗 1 次失误机会（每关 3 次）；',
-            '· 清空本关全部箭头即通关，失误次数耗尽则本关失败。',
+            '· 若被其他箭头阻挡，箭头保留，并消耗 1 次失误机会；',
+            '· 每关有限时，清空本关全部箭头即通关；失误耗尽或超时则本关失败。',
         ]
         y = 264
         for line in lines:
@@ -441,21 +461,32 @@ class App:
         lv = LEVELS[self.level_index]
         title = get_font(22, bold=True).render(
             '%s   (%d/%d)' % (lv['name'], self.level_index + 1, len(LEVELS)), True, INK)
-        s.blit(title, (116, 34))
+        s.blit(title, (110, 30))
+        # 第二行：剩余箭头 | 失误次数 | 剩余时间（右侧）
         remain = self.session.board.count()
         txt = get_font(20).render('剩余箭头：%d' % remain, True, INK)
-        s.blit(txt, (330, 36))
-        # 失误次数（红心）
+        s.blit(txt, (130, 78))
         lab = get_font(20).render('失误', True, INK)
-        s.blit(lab, (470, 36))
-        x = 528
+        s.blit(lab, (330, 78))
+        x = 392
         for i in range(self.session.max_mistakes):
             color = BLOCKED_RED if i < self.session.mistakes_left else (198, 188, 172)
-            pygame.draw.circle(s, color, (x, 47), 11)
+            pygame.draw.circle(s, color, (x, 89), 11)
             x += 28
         if self.session.mistakes_left == 0:
             warn = get_font(20, bold=True).render('机会已用完！', True, BLOCKED_RED)
-            s.blit(warn, warn.get_rect(center=(x + 70, 47)))
+            s.blit(warn, (x + 14, 78))
+        # 剩余时间：最后 30 秒变红提醒
+        tl = self.session.time_limit
+        if tl > 0:
+            urgent = self.session.time_left <= 30
+            color = BLOCKED_RED if urgent else INK
+            ttxt = get_font(22, bold=True).render(
+                '剩余时间 %s' % fmt_time(self.session.time_left), True, color)
+            s.blit(ttxt, ttxt.get_rect(topright=(W - 24, 78)))
+        else:
+            ttxt = get_font(20).render('不限时', True, SUB_INK)
+            s.blit(ttxt, ttxt.get_rect(topright=(W - 24, 80)))
 
     def draw_game(self, s):
         s.fill(PAPER)
@@ -463,30 +494,33 @@ class App:
         b = self.session.board
         bx, by = self.board_origin()
         rows, cols = b.rows, b.cols
-        pygame.draw.rect(s, (240, 235, 221), (bx - 10, by - 10, cols * CELL + 20, rows * CELL + 20),
+        cell = self.cell
+        pygame.draw.rect(s, (240, 235, 221),
+                         (bx - 10, by - 10, cols * cell + 20, rows * cell + 20),
                          border_radius=12)
         # 悬停高亮
-        cell = self.cell_at(*self.mouse)
-        if cell:
-            r, c = cell
+        hover = self.cell_at(*self.mouse)
+        if hover:
+            r, c = hover
             if b.arrow(r, c):
-                pygame.draw.rect(s, (233, 227, 210), (bx + c * CELL, by + r * CELL, CELL, CELL))
+                pygame.draw.rect(s, (233, 227, 210),
+                                 (bx + c * cell, by + r * cell, cell, cell))
         # 提示光圈
         if self.hint_target and self.hint_timer > 0:
             r, c = self.hint_target
             cx, cy = self.cell_center(r, c)
-            radius = int(CELL * 0.42 + 6 + 3 * math.sin(self.hint_timer * 10))
+            radius = int(cell * 0.42 + 6 + 3 * math.sin(self.hint_timer * 10))
             pygame.draw.circle(s, HINT_YELLOW, (cx, cy), radius, 4)
         # 网格与箭头
         for r in range(rows):
             for c in range(cols):
-                rect = pygame.Rect(bx + c * CELL, by + r * CELL, CELL, CELL)
+                rect = pygame.Rect(bx + c * cell, by + r * cell, cell, cell)
                 pygame.draw.rect(s, GRID_LINE, rect, width=1)
         for r in range(rows):
             for c in range(cols):
                 ch = b.arrow(r, c)
                 if ch is not None:
-                    draw_arrow(s, self.cell_center(r, c), ch, CELL * 0.55,
+                    draw_arrow(s, self.cell_center(r, c), ch, cell * 0.55,
                                ARROW_BLUE, ARROW_DARK)
         for a in self.animations:
             a.draw(s)
@@ -503,7 +537,11 @@ class App:
         if self.state == self.STATE_WIN:
             title, sub = '恭喜通关！', '本关全部箭头已飞出'
         elif self.state == self.STATE_LOSE:
-            title, sub = '本关失败', '失误次数已用完，再试一次吧'
+            reason = self.session.lose_reason if self.session else None
+            if reason == 'time':
+                title, sub = '时间耗尽', '本关限时已到，再试一次吧'
+            else:
+                title, sub = '本关失败', '失误次数已用完，再试一次吧'
         else:
             title, sub = '全部通关！', '你已经完成所有关卡'
         img = get_font(40, bold=True).render(title, True, INK)
