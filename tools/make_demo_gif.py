@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 生成演示 GIF：自动求解第 1 关，展示箭头依次飞出的动画效果。
 
@@ -31,7 +31,7 @@ def main():
 
     def capture():
         app.draw()
-        frames.append(pygame.image.tostring(app.screen, 'RGB', False))
+        frames.append(pygame.image.tobytes(app.screen, 'RGB', False))
 
     # 自动游玩：每次点击一个可飞出箭头并播放飞出动画
     guard = 0
@@ -56,7 +56,7 @@ def main():
     app.build_buttons()
     for _ in range(8):
         app.draw()
-        frames.append(pygame.image.tostring(app.screen, 'RGB', False))
+        frames.append(pygame.image.tobytes(app.screen, 'RGB', False))
 
     imgs = [Image.frombytes('RGB', (W, H), f) for f in frames]
     out = os.path.join(OUT, 'demo.gif')
