@@ -128,6 +128,55 @@ class TestT06_RestartMidGame(unittest.TestCase):
         self.assertEqual(s.undo_stack, [], '重新开始后撤销栈应清空')
 
 
+class TestT07_TimeLimit(unittest.TestCase):
+    """T07 时间限制：倒计时递减、超时判负、失败原因区分、重开恢复。"""
+
+    def test_T07_countdown_decreases(self):
+        s = Session([">.."], max_mistakes=3, time_limit=60)
+        self.assertEqual(s.time_left, 60)
+        s.tick(10)
+        self.assertAlmostEqual(s.time_left, 50)
+        self.assertEqual(s.status, 'playing', '时间未到不应失败')
+
+    def test_T07_timeout_loses(self):
+        s = Session([">.."], max_mistakes=3, time_limit=5)
+        s.tick(5.1)
+        self.assertEqual(s.status, 'lost', '超时应判失败')
+        self.assertEqual(s.lose_reason, 'time', '失败原因应为时间耗尽')
+        self.assertEqual(s.time_left, 0.0)
+
+    def test_T07_mistake_lose_reason(self):
+        s = Session(["><"], max_mistakes=1, time_limit=60)
+        s.click(0, 0)
+        self.assertEqual(s.status, 'lost')
+        self.assertEqual(s.lose_reason, 'mistakes', '失败原因应为失误耗尽')
+
+    def test_T07_no_limit_ignores_tick(self):
+        s = Session([">.."])               # 默认不限时
+        s.tick(999)
+        self.assertEqual(s.status, 'playing')
+        self.assertEqual(s.time_left, 0)
+
+    def test_T07_restart_resets_time(self):
+        s = Session([">.."], max_mistakes=3, time_limit=30)
+        s.tick(10)
+        s.reset()
+        self.assertEqual(s.time_left, 30, '重新开始后剩余时间应恢复')
+
+    def test_T07_won_stops_countdown(self):
+        s = Session([">.."], max_mistakes=3, time_limit=30)
+        s.click(0, 0)                      # 通关
+        s.tick(60)
+        self.assertEqual(s.status, 'won', '通关后不应再超时')
+        self.assertEqual(s.lose_reason, None)
+
+    def test_T07_time_not_consumed_by_mistakes(self):
+        s = Session(["><"], max_mistakes=3, time_limit=30)
+        s.click(0, 0)                      # 失误一次
+        s.tick(5)
+        self.assertAlmostEqual(s.time_left, 25, '失误不消耗时间，时间只随 tick 减少')
+
+
 class TestLevelValidity(unittest.TestCase):
     """所有关卡：格式合法且存在通关顺序（防止提交不可通关的关卡）。"""
 

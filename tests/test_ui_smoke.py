@@ -92,6 +92,25 @@ class TestUiSmoke(unittest.TestCase):
         self.app.build_buttons()
         self.assertGreaterEqual(len([b for b in self.app.buttons]), len(LEVELS))
 
+    def test_05_timeout_leads_to_lose_screen(self):
+        # 时间耗尽：把第 1 关剩余时间压到 0，推进若干帧后应进入失败界面
+        self.app.start_level(0)
+        self.app.session.time_left = 0.05
+        for _ in range(120):
+            self.app.update(1 / 60)
+            if self.app.state != App.STATE_GAME:
+                break
+        self.assertEqual(self.app.session.status, 'lost')
+        self.assertEqual(self.app.session.lose_reason, 'time')
+        self.assertEqual(self.app.state, App.STATE_LOSE, '超时后应进入失败界面')
+        # 失败界面可正常绘制
+        self.app.draw()
+
+    def test_06_hud_shows_time(self):
+        self.app.start_level(0)
+        self.app.draw()                     # 包含倒计时的 HUD 可正常绘制
+        self.assertGreater(self.app.session.time_limit, 0, '第 1 关应有限时')
+
 
 if __name__ == '__main__':
     unittest.main()
