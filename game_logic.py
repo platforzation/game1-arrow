@@ -130,19 +130,37 @@ def validate_level(level):
 
 
 class Session:
-    """一局游戏：棋盘 + 失误次数 + 状态机（playing / won / lost），并支持撤销。"""
+    """一局游戏：棋盘 + 失误次数 + 剩余时间 + 状态机（playing / won / lost），并支持撤销。"""
 
-    def __init__(self, level, max_mistakes=3):
+    def __init__(self, level, max_mistakes=3, time_limit=0):
         self.level = [row[:] for row in level]
         self.max_mistakes = max_mistakes
+        self.time_limit = time_limit          # 秒；0 表示不限时
         self.reset()
 
     def reset(self):
-        """重新开始：棋盘恢复初始布局，失误次数恢复，撤销栈清空。"""
+        """重新开始：棋盘恢复初始布局，失误次数与剩余时间恢复，撤销栈清空。"""
         self.board = Board(self.level)
         self.mistakes_left = self.max_mistakes
+        self.time_left = self.time_limit
+        self.lose_reason = None               # 失败原因：'mistakes' / 'time'
         self.status = 'playing'      # playing / won / lost
         self.undo_stack = []         # 元素为 (r, c, 方向字符)
+
+    def tick(self, dt):
+        """
+        推进倒计时（供界面每帧调用）。
+        超时则本关失败，返回 True；其余情况返回 False。
+        """
+        if self.status != 'playing' or self.time_limit <= 0:
+            return False
+        self.time_left = max(0.0, self.time_left - dt)
+        if self.time_left <= 0:
+            self.time_left = 0.0
+            self.status = 'lost'
+            self.lose_reason = 'time'
+            return True
+        return False
 
     def click(self, r, c):
         """
@@ -166,6 +184,7 @@ class Session:
         self.mistakes_left -= 1
         if self.mistakes_left <= 0:
             self.status = 'lost'
+            self.lose_reason = 'mistakes'
         return 'blocked'
 
     def arrow(self, r, c):
