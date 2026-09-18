@@ -327,10 +327,11 @@ class App:
             return
         if self.session.status != 'playing':
             return
-        if any(isinstance(a, FlyOut) for a in self.animations):
-            return                            # 飞出动画进行中，暂时忽略点击
         ch = self.session.arrow(r, c)
         if ch is None:
+            return
+        # 该箭头正在播放碰撞晃动动画时，忽略重复点击（防止快速连点重复扣失误）
+        if any(isinstance(a, Shake) and a.r == r and a.c == c for a in self.animations):
             return
         if self.session.board.can_fly(r, c):
             self.session.click(r, c)          # 逻辑上立即飞出
