@@ -547,16 +547,16 @@ class App:
         title = get_font(22, bold=True).render(
             '%s   (%d/%d)' % (lv['name'], self.level_index + 1, len(LEVELS)), True, INK)
         s.blit(title, (110, 30))
-        # 第二行：剩余箭头 | 旋转进度 | 失误次数 | 剩余时间（右侧）
-        remain = self.session.board.count()
-        txt = get_font(20).render('剩余箭头：%d' % remain, True, INK)
-        s.blit(txt, (130, 78))
-        # 旋转机制提示（仅在有旋转的关卡显示）
+        # 旋转机制提示（仅在有旋转的关卡显示，放在标题行右侧）
         if self.session.rotate_every > 0:
             prog = self.session.rotate_progress()
             if prog is not None:
                 rtxt = get_font(18, bold=True).render('🔄 再消 %d 个旋转' % prog, True, ARROW_GOLD)
-                s.blit(rtxt, (270, 80))
+                s.blit(rtxt, (400, 34))
+        # 第二行：剩余箭头 | 失误次数 | 剩余时间（右侧）
+        remain = self.session.board.count()
+        txt = get_font(20).render('剩余箭头：%d' % remain, True, INK)
+        s.blit(txt, (130, 78))
         lab = get_font(20).render('失误', True, INK)
         s.blit(lab, (330, 78))
         x = 392
