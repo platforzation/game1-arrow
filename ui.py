@@ -7,6 +7,7 @@
 """
 
 import math
+import os
 import sys
 
 import pygame
@@ -38,15 +39,29 @@ BTN_TEXT = (255, 255, 255)
 OVERLAY = (0, 0, 0, 150)
 
 # 中文字体候选（Windows 常见字体，依次尝试）
-FONT_CANDIDATES = ['microsoftyahei', 'msyh', 'simhei', 'simsun', 'dengxian', 'kaiti']
+# 注意：不使用 pygame.font.match_font()——官方 pygame 2.6.x 在 Windows 上
+# 扫描系统字体时有 bug（TypeError: expected str... not int），直接读字体文件路径最稳。
+FONT_DIR = os.path.join(os.environ.get('WINDIR', r'C:\Windows'), 'Fonts')
+# (常规, 粗体) 候选字体文件名，按优先级排列
+FONT_FILES = [
+    ('msyh.ttc', 'msyhbd.ttc'),    # 微软雅黑
+    ('simhei.ttf', 'simhei.ttf'),  # 黑体（没有单独粗体文件，用同一文件）
+    ('Deng.ttf', 'Deng.ttf'),      # 等线
+    ('simsun.ttc', 'simsun.ttc'),  # 宋体
+    ('simkai.ttf', 'simkai.ttf'),  # 楷体
+]
 
 
 def get_font(size, bold=False):
-    """获取支持中文的字体；找不到候选字体时退回 pygame 默认字体。"""
-    for name in FONT_CANDIDATES:
-        path = pygame.font.match_font(name, bold=bold)
-        if path:
-            return pygame.font.Font(path, size)
+    """获取支持中文的字体；直接读 Windows 字体文件，绕过 match_font 的 bug。"""
+    for regular, bold_file in FONT_FILES:
+        fname = bold_file if bold else regular
+        path = os.path.join(FONT_DIR, fname)
+        if os.path.exists(path):
+            try:
+                return pygame.font.Font(path, size)
+            except Exception:
+                continue
     return pygame.font.Font(None, size)
 
 
