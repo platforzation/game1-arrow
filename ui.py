@@ -88,7 +88,9 @@ def draw_arrow(surf, center, direction, size, color, dark, alpha=255):
     pygame.draw.polygon(tmp, dark, [(x + 1, y + 1) for x, y in head])
     pygame.draw.rect(tmp, color, tail, border_radius=size // 6)
     pygame.draw.polygon(tmp, color, head)
-    angle = {'>': 0, 'v': 90, '<': 180, '^': 270}[direction]
+    # pygame.transform.rotate 正角度为逆时针；基准图形朝右，故：
+    # 朝右=0°，朝上=90°，朝左=180°，朝下=270°
+    angle = {'>': 0, '^': 90, '<': 180, 'v': 270}[direction]
     if angle:
         tmp = pygame.transform.rotate(tmp, angle)
     tmp.set_alpha(alpha)
