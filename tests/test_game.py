@@ -198,5 +198,84 @@ class TestLevelValidity(unittest.TestCase):
         self.assertFalse(ok, '互堵关卡应被判定为不可解')
 
 
+class TestBoardRotate(unittest.TestCase):
+    """T08 棋盘旋转功能：顺时针旋转 90° 后位置与方向均正确。"""
+
+    def test_rotate_position_and_direction(self):
+        # 2x3 棋盘，(0,0) '>' 应旋转到 (0,1) 并变为 'v'
+        b = Board([">..", ".^."])
+        b.rotate_cw()
+        self.assertEqual(b.rows, 3)
+        self.assertEqual(b.cols, 2)
+        # (0,0) '>' → 新位置 (0, 1)，方向 'v'
+        self.assertEqual(b.arrow(0, 1), 'v')
+        # (1,1) '^' → 新位置 (1, 0)，方向 '>'
+        self.assertEqual(b.arrow(1, 0), '>')
+
+    def test_rotate_four_directions(self):
+        # 验证四个方向旋转后都正确映射
+        b = Board(["^>v<"])
+        b.rotate_cw()
+        # 1x4 旋转后变 4x1
+        self.assertEqual(b.rows, 4)
+        self.assertEqual(b.cols, 1)
+        self.assertEqual(b.arrow(0, 0), '>')   # '^' → '>'
+        self.assertEqual(b.arrow(1, 0), 'v')   # '>' → 'v'
+        self.assertEqual(b.arrow(2, 0), '<')   # 'v' → '<'
+        self.assertEqual(b.arrow(3, 0), '^')   # '<' → '^'
+
+    def test_rotate_preserves_solvability(self):
+        # 旋转是对称变换，可解性保持
+        level = [">..>", ".^..", "...v", "<..."]
+        b1 = Board(level)
+        self.assertIsNotNone(b1.solve(), '旋转前应可解')
+        b2 = Board(level)
+        b2.rotate_cw()
+        self.assertIsNotNone(b2.solve(), '旋转后应仍可解')
+
+
+class TestSessionRotate(unittest.TestCase):
+    """Session 旋转触发：消除指定数量箭头后棋盘旋转，撤销栈清空。"""
+
+    def test_rotate_triggers_after_threshold(self):
+        # 3 个箭头，每消除 2 个旋转一次
+        # (0,2) '>' 可飞；消除后 (1,2) '^' 上方畅通可飞
+        level = [">.>", "..^"]
+        s = Session(level, max_mistakes=3, rotate_every=2)
+        self.assertEqual(s.removed_count, 0)
+        # 先消除 (0,2) '>'（可飞）
+        self.assertEqual(s.click(0, 2), 'flew')
+        self.assertEqual(s.removed_count, 1)
+        self.assertFalse(s.just_rotated)
+        # 再消除 (1,2) '^'（上方已畅通，可飞），触发旋转
+        self.assertEqual(s.click(1, 2), 'flew')
+        self.assertTrue(s.just_rotated, '消除第 2 个后应触发旋转')
+        self.assertEqual(s.removed_count, 0, '旋转后计数器应重置')
+
+    def test_rotate_clears_undo_stack(self):
+        level = [">.>", "..^"]
+        s = Session(level, max_mistakes=3, rotate_every=2)
+        s.click(0, 2)
+        self.assertEqual(len(s.undo_stack), 1)
+        s.click(1, 2)  # 触发旋转
+        self.assertEqual(len(s.undo_stack), 0, '旋转后撤销栈应清空')
+
+    def test_rotate_progress(self):
+        s = Session([">..>"], max_mistakes=3, rotate_every=3)
+        self.assertEqual(s.rotate_progress(), 3)
+        s.click(0, 3)
+        self.assertEqual(s.rotate_progress(), 2)
+        # 不旋转的关卡返回 None
+        s2 = Session([">..>"], max_mistakes=3)
+        self.assertIsNone(s2.rotate_progress())
+
+    def test_no_rotate_when_last_arrow(self):
+        # 消除最后一个箭头时直接通关，不触发旋转
+        s = Session([">.."], max_mistakes=3, rotate_every=1)
+        s.click(0, 0)
+        self.assertEqual(s.status, 'won')
+        self.assertFalse(s.just_rotated)
+
+
 if __name__ == '__main__':
     unittest.main()

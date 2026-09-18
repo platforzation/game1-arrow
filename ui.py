@@ -205,6 +205,34 @@ class FloatText:
         surf.blit(img, img.get_rect(center=(self.pos[0], y)))
 
 
+class BoardRotate:
+    """棋盘旋转动画：旋转前的棋盘截图旋转 90° 并缩小淡出，露出旋转后的新布局。"""
+
+    def __init__(self, app, before_surface):
+        self.app = app
+        self.before = before_surface
+        self.t = 0.0
+        self.dur = 0.6
+
+    def update(self, dt):
+        self.t += dt
+        return self.t >= self.dur
+
+    def draw(self, surf):
+        k = min(1.0, self.t / self.dur)
+        angle = 90 * k
+        scale = max(0.1, 1.0 - 0.9 * k)
+        alpha = int(255 * (1 - k))
+        if alpha <= 0:
+            return
+        tmp = pygame.transform.rotozoom(self.before, angle, scale)
+        tmp.set_alpha(alpha)
+        bx, by = self.app.board_origin()
+        cx = bx + self.app.session.board.cols * self.app.cell // 2
+        cy = by + self.app.session.board.rows * self.app.cell // 2
+        surf.blit(tmp, tmp.get_rect(center=(cx, cy)))
+
+
 # ---------------- 主应用 ----------------
 
 class App:
@@ -254,6 +282,28 @@ class App:
             return int(r), int(c)
         return None
 
+    def capture_board(self):
+        """把当前棋盘（含背景、网格、箭头）绘制到独立 Surface 并返回，供旋转动画使用。"""
+        b = self.session.board
+        cell = self.cell
+        pad = 10
+        w = b.cols * cell + pad * 2
+        h = b.rows * cell + pad * 2
+        surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        pygame.draw.rect(surf, (240, 235, 221), (0, 0, w, h), border_radius=12)
+        for r in range(b.rows):
+            for c in range(b.cols):
+                rect = pygame.Rect(pad + c * cell, pad + r * cell, cell, cell)
+                pygame.draw.rect(surf, GRID_LINE, rect, width=1)
+        for r in range(b.rows):
+            for c in range(b.cols):
+                ch = b.arrow(r, c)
+                if ch is not None:
+                    cx = pad + c * cell + cell // 2
+                    cy = pad + r * cell + cell // 2
+                    draw_arrow(surf, (cx, cy), ch, cell * 0.55, ARROW_BLUE, ARROW_DARK)
+        return surf
+
     # ---------- 流程控制 ----------
 
     def start_level(self, i):
@@ -261,7 +311,8 @@ class App:
         self.level_index = i
         lv = LEVELS[i]
         self.session = Session(lv['grid'], lv['max_mistakes'],
-                               lv.get('time_limit', 0))
+                               lv.get('time_limit', 0),
+                               lv.get('rotate_every', 0))
         # 大棋盘自适应缩小格子，保证整个棋盘居中显示
         rows, cols = self.session.board.rows, self.session.board.cols
         self.cell = max(40, min(CELL, (W - 60) // cols, (H - HUD_H - 60) // rows))
@@ -335,9 +386,25 @@ class App:
         # 该箭头正在播放碰撞晃动动画时，忽略重复点击（防止快速连点重复扣失误）
         if any(isinstance(a, Shake) and a.r == r and a.c == c for a in self.animations):
             return
+        # 棋盘旋转动画期间忽略点击
+        if any(isinstance(a, BoardRotate) for a in self.animations):
+            return
         if self.session.board.can_fly(r, c):
-            self.session.click(r, c)          # 逻辑上立即飞出
-            self.animations.append(FlyOut(r, c, ch, self))
+            # 判断本次消除后是否会触发棋盘旋转
+            will_rotate = (self.session.rotate_every > 0
+                           and self.session.removed_count + 1 >= self.session.rotate_every
+                           and self.session.board.count() > 1)
+            if will_rotate:
+                # 先捕获旋转前的棋盘截图，再执行消除+旋转
+                before_surf = self.capture_board()
+                self.session.click(r, c)
+                if self.session.just_rotated:
+                    self.animations.append(BoardRotate(self, before_surf))
+                    self.floats.append(FloatText('棋盘旋转！', (W // 2, H // 2),
+                                                 color=ARROW_GOLD, cell=self.cell))
+            else:
+                self.session.click(r, c)
+                self.animations.append(FlyOut(r, c, ch, self))
         else:
             self.session.click(r, c)          # 被阻挡：失误次数 -1
             self.animations.append(Shake(r, c, ch, self))
@@ -480,10 +547,16 @@ class App:
         title = get_font(22, bold=True).render(
             '%s   (%d/%d)' % (lv['name'], self.level_index + 1, len(LEVELS)), True, INK)
         s.blit(title, (110, 30))
-        # 第二行：剩余箭头 | 失误次数 | 剩余时间（右侧）
+        # 第二行：剩余箭头 | 旋转进度 | 失误次数 | 剩余时间（右侧）
         remain = self.session.board.count()
         txt = get_font(20).render('剩余箭头：%d' % remain, True, INK)
         s.blit(txt, (130, 78))
+        # 旋转机制提示（仅在有旋转的关卡显示）
+        if self.session.rotate_every > 0:
+            prog = self.session.rotate_progress()
+            if prog is not None:
+                rtxt = get_font(18, bold=True).render('🔄 再消 %d 个旋转' % prog, True, ARROW_GOLD)
+                s.blit(rtxt, (270, 80))
         lab = get_font(20).render('失误', True, INK)
         s.blit(lab, (330, 78))
         x = 392

@@ -6,6 +6,7 @@
     grid         —— 棋盘（字符串列表，'.' 为空格，'^' 'v' '<' '>' 为四个方向箭头）
     max_mistakes —— 本关失误次数上限
     time_limit   —— 本关限时（秒）
+    rotate_every —— 每消除多少个箭头棋盘顺时针旋转 90°（可选，默认 0 不旋转）
 
 注意：所有关卡都已通过求解器（game_logic.Board.solve）验证存在通关顺序，
 初版曾存在两箭头互堵的不可解布局，经人工调整箭头方向后修正。
@@ -115,6 +116,7 @@ LEVELS = [
         ],
         'max_mistakes': 2,
         'time_limit': 140,
+        'rotate_every': 4,
     },
     {
         'name': '第 9 关 · 王者',
@@ -131,6 +133,7 @@ LEVELS = [
         ],
         'max_mistakes': 2,
         'time_limit': 160,
+        'rotate_every': 3,
     },
     {
         'name': '第 10 关 · 终极',
@@ -147,5 +150,6 @@ LEVELS = [
         ],
         'max_mistakes': 2,
         'time_limit': 160,
+        'rotate_every': 3,
     },
 ]

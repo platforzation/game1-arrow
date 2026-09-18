@@ -23,6 +23,9 @@ DIRECTIONS = {
 
 DIR_NAMES = {'^': '上', 'v': '下', '<': '左', '>': '右'}
 
+# 顺时针旋转 90° 后的方向映射：上→右，右→下，下→左，左→上
+ROTATE_CW = {'^': '>', '>': 'v', 'v': '<', '<': '^'}
+
 
 class Board:
     """一个关卡的棋盘：rows × cols 的网格，每个格子存放一个方向字符或 None。"""
@@ -76,6 +79,25 @@ class Board:
 
     def clear(self):
         return self.count() == 0
+
+    def rotate_cw(self):
+        """
+        顺时针旋转棋盘 90°：
+        - 行列互换（新尺寸为 cols × rows）；
+        - 每个箭头移动到新位置 new_grid[c][rows-1-r]；
+        - 箭头方向也顺时针旋转 90°（^→>，>→v，v→<，<→^）。
+        旋转是对称变换，箭头间相对阻挡关系不变，关卡可解性保持。
+        """
+        new_rows, new_cols = self.cols, self.rows
+        new_grid = [[None] * new_cols for _ in range(new_rows)]
+        for r in range(self.rows):
+            for c in range(self.cols):
+                ch = self.grid[r][c]
+                if ch is not None:
+                    nr, nc = c, self.rows - 1 - r
+                    new_grid[nr][nc] = ROTATE_CW[ch]
+        self.rows, self.cols = new_rows, new_cols
+        self.grid = new_grid
 
     def to_level(self):
         """把当前棋盘状态还原为关卡字符串列表。"""
@@ -132,10 +154,11 @@ def validate_level(level):
 class Session:
     """一局游戏：棋盘 + 失误次数 + 剩余时间 + 状态机（playing / won / lost），并支持撤销。"""
 
-    def __init__(self, level, max_mistakes=3, time_limit=0):
+    def __init__(self, level, max_mistakes=3, time_limit=0, rotate_every=0):
         self.level = [row[:] for row in level]
         self.max_mistakes = max_mistakes
         self.time_limit = time_limit          # 秒；0 表示不限时
+        self.rotate_every = rotate_every      # 每消除多少个箭头旋转一次；0 表示不旋转
         self.reset()
 
     def reset(self):
@@ -146,6 +169,14 @@ class Session:
         self.lose_reason = None               # 失败原因：'mistakes' / 'time'
         self.status = 'playing'      # playing / won / lost
         self.undo_stack = []         # 元素为 (r, c, 方向字符)
+        self.removed_count = 0       # 自上次旋转以来已消除的箭头数
+        self.just_rotated = False    # 本帧是否刚触发旋转（供 UI 播放动画）
+
+    def rotate_progress(self):
+        """距离下次旋转还需消除几个箭头；不旋转的关卡返回 None。"""
+        if self.rotate_every <= 0:
+            return None
+        return self.rotate_every - self.removed_count
 
     def tick(self, dt):
         """
@@ -178,6 +209,15 @@ class Session:
         if self.board.can_fly(r, c):
             self.board.grid[r][c] = None
             self.undo_stack.append((r, c, ch))
+            self.removed_count += 1
+            self.just_rotated = False
+            # 达到旋转阈值时顺时针旋转棋盘（旋转后坐标全变，清空撤销栈）
+            if self.rotate_every > 0 and self.removed_count >= self.rotate_every \
+                    and not self.board.clear():
+                self.board.rotate_cw()
+                self.undo_stack = []
+                self.removed_count = 0
+                self.just_rotated = True
             if self.board.clear():
                 self.status = 'won'
             return 'flew'
